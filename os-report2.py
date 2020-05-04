@@ -41,7 +41,7 @@ parser.add_option('-a', '--addresses', default='-1',   help='a set of comma-sepa
 parser.add_option('-f', '--addressfile', default='',   help='a file with a bunch of addresses in it',                                action='store', type='string', dest='addressfile')
 parser.add_option('-n', '--numaddrs', default='10',    help='if -a (--addresses) is -1, this is the number of addrs to generate',    action='store', type='string', dest='numaddrs')
 parser.add_option('-p', '--policy', default='FIFO',    help='replacement policy: FIFO, LRU, OPT, UNOPT, RAND, CLOCK',                action='store', type='string', dest='policy')
-parser.add_option('-b', '--clockbits', default=2,      help='for CLOCK policy, how many clock bits to use',                          action='store', type='int', dest='clockbits')
+parser.add_option('-b', '--clockbits', default=1,      help='for CLOCK policy, how many clock bits to use',                          action='store', type='int', dest='clockbits')
 parser.add_option('-C', '--cachesize', default='3',    help='size of the page cache, in pages',                                      action='store', type='string', dest='cachesize')
 parser.add_option('-m', '--maxpage', default='10',     help='if randomly generating page accesses, this is the max page number',     action='store', type='string', dest='maxpage')
 parser.add_option('-s', '--seed', default='0',         help='random number seed',                                                    action='store', type='string', dest='seed')
@@ -106,6 +106,8 @@ else:
     memory = []
     hits = 0
     miss = 0
+    # this variable is for CLOCK Algorithm
+    clockhand = 0
 
     if policy == 'FIFO':
         leftStr = 'FirstIn'
@@ -161,21 +163,32 @@ else:
                         print 'MEMORY ', memory
                         print 'REF (b)', ref
 
-                    # hack: for now, do random
-                    # victim = memory.pop(int(random.random() * count))
-                    victim = -1
-                    while victim == -1:
-                        page = memory[int(random.random() * count)]
-                        if cdebug:
-                            print '  scan page:', page, ref[page]
-                        if ref[page] >= 1:
-                            ref[page] -= 1
-                        else:
-                            # this is our victim
-                            victim = page
-                            memory.remove(page)
-                            break
-
+                    # hack: for now, do circular way!
+                    # victim = memory[clockhand]
+		    victim = -1
+		    while victim == -1:
+		        page = memory[clockhand]
+		        if cdebug:
+                	    print '  scan page:', page, ref[page]
+			
+			# According to where clockhand points, its reference bit determines victims or not.
+			# In former code, if ref[page] is bigger than or same as 1, it is decreased by 1.
+			# However, I assumed that the default clockbit(the maximum number of the references) is 1, so, decreasing by 1 is the same as just assigning zero to reference of the page.
+        		if ref[page] >= 1:
+                	    ref[page] = 0
+			    
+			    # advances the clockhand to the next page, if victim is not decided.
+                            # this algorithm is based on circular list. if the clockhand exceeds the number of the co    unt(the memory size), it should be zero index of the List.
+			    
+			    clockhand += 1
+                            if clockhand >= cachesize:
+                                clockhand = 0
+        		else:
+                	    # this is our victim, remove victim from the memory
+			    # its reference number is going to be removed from the reference sets in line 195.
+                	    victim = page
+                	    memory.remove(page)
+			    break
                     # remove old page's ref count
                     if page in memory:
                         assert('BROKEN')
@@ -236,7 +249,13 @@ else:
                 count = count + 1
 
             # now add to memory
-            memory.append(n)
+	    # In CLOCK algorithm, address should be inserted to specific index
+	    # the clockhand points to this index where was the victim's index
+            # this index cannot exceeds the index of the cachesize, if it does, it should be zero index.
+	    memory.append(clockhand)
+	    clockhand += 1
+	    if clockhand >= cachesize:
+		clockhand = 0
             if cdebug:
                 print 'LEN (a)', len(memory)
             if victim != -1:
